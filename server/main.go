@@ -3,34 +3,32 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/motongxue/concurrentChunkTransfer/models"
 	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/motongxue/concurrentChunkTransfer/models"
 )
 
 var (
-	outPutDir = "test_out"
+	outputDir = "test_out"
+	port      = "12345"
 )
 
 func main() {
-	listener, err := net.Listen("tcp", ":12345")
+	listener, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		fmt.Println("Error listening:", err)
 		return
 	}
 	defer listener.Close()
 
-	fmt.Println("Server started. Listening on port 12345...")
-	err = os.Mkdir(outPutDir, os.ModePerm)
-	if err != nil {
-		fmt.Println("Error creating output directory:", err)
-		return
-	}
 	for {
 		conn, err := listener.Accept()
+		fmt.Printf("Server started. Listening on port %s...\n", port)
+
 		if err != nil {
 			fmt.Println("Error accepting connection:", err)
 			continue
@@ -38,6 +36,14 @@ func main() {
 
 		fmt.Println("Client connected:", conn.RemoteAddr())
 
+		// Create the output directory if it doesn't exist
+		if _, err := os.Stat(outputDir); os.IsNotExist(err) {
+			err = os.MkdirAll(outputDir, os.ModePerm)
+			if err != nil {
+				fmt.Println("Error creating output directory:", err)
+				return
+			}
+		}
 		go handleConnection(conn)
 	}
 }
@@ -74,7 +80,7 @@ func handleConnection(conn net.Conn) {
 		sliceFileName := fileRecord.FileName + "_" + fmt.Sprintf("%d", fileFragment.FragmentID)
 
 		// 生成文件
-		sliceFile, err := os.Create(filepath.Join(outPutDir, sliceFileName))
+		sliceFile, err := os.Create(filepath.Join(outputDir, sliceFileName))
 		if err != nil {
 			fmt.Println("Error creating file:", err)
 			return
@@ -95,7 +101,7 @@ func handleConnection(conn net.Conn) {
 	}
 
 	// Combine the fragments into a single file
-	filePath := "D:\\my_data\\my_code\\go_code\\ConcurrentTransferKit\\test_out\\" + fileRecord.FileName // Adjust the file path
+	filePath := filepath.Join(outputDir, fileRecord.FileName) // Adjust the file path
 	file, err := os.Create(filePath)
 	if err != nil {
 		fmt.Println("Error creating file:", err)
@@ -105,7 +111,7 @@ func handleConnection(conn net.Conn) {
 	// 根据上面的fileRecord的文件名+文件片段ID，读取文件
 	for fragmentID := 0; fragmentID < fileRecord.NumFragments; fragmentID++ {
 		sliceFileName := fileRecord.FileName + "_" + fmt.Sprintf("%d", fragmentID)
-		sliceFile, err := os.Open(filepath.Join(outPutDir, sliceFileName))
+		sliceFile, err := os.Open(filepath.Join(outputDir, sliceFileName))
 		if err != nil {
 			fmt.Println("Error opening file:", err)
 			return

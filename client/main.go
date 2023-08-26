@@ -15,6 +15,13 @@ import (
 	"github.com/motongxue/concurrentChunkTransfer/models"
 )
 
+var (
+	intputDir  = "test_in"
+	intputFile = "README.md"
+	ip         = "localhost"
+	port       = "12345"
+)
+
 func sendFileFragment(conn net.Conn, wg *sync.WaitGroup, fragmentID int, fileFragment *models.FileFragment) {
 	defer wg.Done()
 
@@ -36,14 +43,14 @@ func sendFileFragment(conn net.Conn, wg *sync.WaitGroup, fragmentID int, fileFra
 }
 
 func main() {
-	conn, err := net.Dial("tcp", "localhost:12345")
+	conn, err := net.Dial("tcp", ip+":"+port)
 	if err != nil {
 		fmt.Println("Error connecting to server:", err)
 		return
 	}
 	defer conn.Close()
 
-	filePath := "D:\\my_data\\my_code\\go_code\\ConcurrentTransferKit\\test_in\\README.md" // Adjust the file path
+	filePath := filepath.Join(intputDir, intputFile) // Adjust the file path
 	file, err := os.Open(filePath)
 	if err != nil {
 		fmt.Println("Error opening file:", err)
@@ -87,11 +94,11 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
-	// Seek back to the beginning of the file
-    if _, err := file.Seek(0, io.SeekStart); err != nil {
-        fmt.Println("Error seeking file:", err)
-        return
-    }
+	// 将指针移动到文件开头
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		fmt.Println("Error seeking file:", err)
+		return
+	}
 	for fragmentID := 0; fragmentID < fileRecord.NumFragments; fragmentID++ {
 		fragment := make([]byte, fileRecord.FragmentSize)
 		n, err := file.Read(fragment)
@@ -106,7 +113,7 @@ func main() {
 		}
 		wg.Add(1)
 		time.Sleep(10 * time.Millisecond)
-		// 并发发送，无法控制顺序
+		// 这里的并发发送，无法控制顺序，所以需要在server端利用文件名进行排序
 		go sendFileFragment(conn, &wg, fragmentID, fileFragment)
 	}
 
@@ -115,5 +122,3 @@ func main() {
 
 	fmt.Println("File sent:", filePath)
 }
-
-
