@@ -22,6 +22,7 @@ var (
 	url        = "http://localhost:8080/getFileTransferInfo"
 	tcpAddress = "localhost:8081"
 	ChunkSize  = 1 << 23 // 8MB
+	bufferSize = 1 << 10 // 每次发送 1KB 数据
 )
 
 func main() {
@@ -114,17 +115,34 @@ func main() {
 			if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
 				log.Fatalln("Error seeking file:", err)
 			}
-			buffer := make([]byte, endOffset-startOffset)
-			n, err := file.Read(buffer)
-			if err != nil {
-				log.Fatalln("Error reading file:", err)
-				return
+			// 使用缓冲区逐块发送文件
+			buffer := make([]byte, bufferSize)
+			totalBytesSent := int64(0)
+
+			for {
+				n, err := file.Read(buffer)
+				totalBytesSent += int64(n)
+				if totalBytesSent > endOffset-startOffset {
+					n -= int(totalBytesSent - endOffset + startOffset)
+				}
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					log.Println("Error reading file:", err)
+					return
+				}
+
+				_, err = conn.Write(buffer[:n])
+				if err != nil {
+					log.Println("Error sending file fileMetaData:", err)
+					return
+				}
+				if totalBytesSent >= endOffset-startOffset {
+					break
+				}
 			}
-			_, err = conn.Write(buffer[:n])
-			if err != nil {
-				log.Fatalln("Error writing to connection:", err)
-				return
-			}
+			fmt.Printf("File sent successfully: start: %d, end: %d, len: %d == %d\n", startOffset, endOffset, endOffset-startOffset, totalBytesSent)
 		}(idx)
 	}
 	wg.Wait()
