@@ -1,11 +1,14 @@
 package client
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"github.com/motongxue/concurrentChunkTransfer/models"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 )
@@ -13,6 +16,7 @@ import (
 var (
 	// todo 变量抽取到配置文件中
 	fileName  = "D:\\my_data\\my_code\\go_code\\ConcurrentTransferKit\\test_in\\test.zip"
+	url       = "http://localhost:8080/getFileTransferInfo"
 	ChunkSize = 1 << 23 // 8MB
 )
 
@@ -49,6 +53,30 @@ func main() {
 	fileMetaData.ChunkNum = int(t)
 	log.Println("FileMetaData:", fileMetaData)
 
+	// 发送http请求，获取文件分片信息
+	jsonData, err := json.Marshal(fileMetaData)
+	if err != nil {
+		log.Fatalln("Error marshalling FileMetaData:", err)
+	}
+
+	request, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Fatalln("Error creating HTTP request:", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	client := &http.Client{}
+	response, err := client.Do(request)
+	if err != nil {
+		log.Fatalln("Error sending HTTP request:", err)
+	}
+	defer response.Body.Close()
+
+	// 读取响应体
+	var responseData models.ResponseData
+	decoder := json.NewDecoder(response.Body)
+	if err := decoder.Decode(&responseData); err != nil {
+		log.Fatalln("Error decoding response:", err)
+	}
 }
 
 // 计算文件的MD5值
