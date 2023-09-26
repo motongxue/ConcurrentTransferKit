@@ -5,9 +5,11 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"github.com/motongxue/concurrentChunkTransfer/models"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,9 +17,10 @@ import (
 
 var (
 	// todo 变量抽取到配置文件中
-	fileName  = "D:\\my_data\\my_code\\go_code\\ConcurrentTransferKit\\test_in\\test.zip"
-	url       = "http://localhost:8080/getFileTransferInfo"
-	ChunkSize = 1 << 23 // 8MB
+	fileName   = "D:\\my_data\\my_code\\go_code\\ConcurrentTransferKit\\test_in\\test.zip"
+	url        = "http://localhost:8080/getFileTransferInfo"
+	tcpAddress = "localhost:8081"
+	ChunkSize  = 1 << 23 // 8MB
 )
 
 func main() {
@@ -77,6 +80,20 @@ func main() {
 	if err := decoder.Decode(&responseData); err != nil {
 		log.Fatalln("Error decoding response:", err)
 	}
+	var info models.FileTransferInfo
+	info = responseData.Data
+	for _, idx := range info.Unreceived {
+		conn, err := net.Dial("tcp", tcpAddress)
+		if err != nil {
+			fmt.Println("Error connecting to server:", err)
+			return
+		}
+		defer conn.Close()
+		go func(idx int) {
+			// todo 读取文件分片
+		}(idx)
+	}
+	log.Println("File sent successfully")
 }
 
 // 计算文件的MD5值
