@@ -90,7 +90,34 @@ func main() {
 		}
 		defer conn.Close()
 		go func(idx int) {
-			// todo 读取文件分片
+			startOffset := int64(idx) * fileMetaData.ChunkSize
+			endOffset := min(startOffset+fileMetaData.ChunkSize, fileMetaData.FileSize)
+
+			// 写入 FileFragment 结构体信息
+			fileFragment := models.FileFragment{
+				MD5:     fileMetaData.MD5,
+				Current: idx,
+			}
+			encoder := json.NewEncoder(conn)
+			if err := encoder.Encode(fileFragment); err != nil {
+				log.Println("Error encoding FileFragment:", err)
+				return
+			}
+			// 将文件指针移动到start
+			if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
+				log.Fatalln("Error seeking file:", err)
+			}
+			buffer := make([]byte, endOffset-startOffset)
+			n, err := file.Read(buffer)
+			if err != nil {
+				log.Fatalln("Error reading file:", err)
+				return
+			}
+			_, err = conn.Write(buffer[:n])
+			if err != nil {
+				log.Fatalln("Error writing to connection:", err)
+				return
+			}
 		}(idx)
 	}
 	log.Println("File sent successfully")
@@ -109,4 +136,11 @@ func calMD5(file *os.File) (string, error) {
 	// 将字节数组转换为十六进制字符串
 	md5Str := hex.EncodeToString(hashBytes)
 	return md5Str, nil
+}
+
+func min(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }
