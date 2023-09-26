@@ -26,13 +26,6 @@ var (
 
 func main() {
 	file, err := os.Open(fileName)
-	defer func() {
-		err = file.Close()
-		if err != nil {
-			log.Fatalln("Error closing file:", err)
-			return
-		}
-	}()
 	if err != nil {
 		log.Fatalln("Error opening file:", err)
 	}
@@ -56,7 +49,12 @@ func main() {
 	}
 	fileMetaData.ChunkNum = int(t)
 	log.Println("FileMetaData:", fileMetaData)
-
+	// 此时关于文件信息的提取已经完成，可以关闭文件了
+	err = file.Close()
+	if err != nil {
+		log.Fatalln("Error closing file:", err)
+		return
+	}
 	// 发送http请求，获取文件分片信息
 	jsonData, err := json.Marshal(fileMetaData)
 	if err != nil {
@@ -106,6 +104,12 @@ func main() {
 				log.Println("Error encoding FileFragment:", err)
 				return
 			}
+			// 由于多个协程同时对文件指针进行操作，需要对每个协程的文件指针进行独立的操作
+			file, err := os.Open(fileName)
+			if err != nil {
+				log.Fatalln("Error opening file:", err)
+			}
+
 			// 将文件指针移动到start
 			if _, err := file.Seek(startOffset, io.SeekStart); err != nil {
 				log.Fatalln("Error seeking file:", err)
