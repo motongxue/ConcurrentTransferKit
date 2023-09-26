@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 )
 
 var (
@@ -82,6 +83,7 @@ func main() {
 	}
 	var info models.FileTransferInfo
 	info = responseData.Data
+	var wg sync.WaitGroup
 	for _, idx := range info.Unreceived {
 		conn, err := net.Dial("tcp", tcpAddress)
 		if err != nil {
@@ -89,10 +91,11 @@ func main() {
 			return
 		}
 		defer conn.Close()
+		wg.Add(1)
 		go func(idx int) {
 			startOffset := int64(idx) * fileMetaData.ChunkSize
 			endOffset := min(startOffset+fileMetaData.ChunkSize, fileMetaData.FileSize)
-
+			defer wg.Done()
 			// 写入 FileFragment 结构体信息
 			fileFragment := models.FileFragment{
 				MD5:     fileMetaData.MD5,
@@ -120,6 +123,7 @@ func main() {
 			}
 		}(idx)
 	}
+	wg.Wait()
 	log.Println("File sent successfully")
 }
 
