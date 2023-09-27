@@ -59,16 +59,16 @@ func main() {
 		}
 		defer conn.Close()
 		wg.Add(1)
-		go sendSliceFile(idx, fileMetaData, wg, &conn)
+		go sendSliceFile(idx, fileMetaData, &wg, &conn)
 	}
 	wg.Wait()
 	log.Println("File sent successfully")
 }
 
-func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg sync.WaitGroup, conn *net.Conn) {
+func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg *sync.WaitGroup, conn *net.Conn) {
 	startOffset := int64(idx) * fileMetaData.ChunkSize
 	endOffset := min(startOffset+fileMetaData.ChunkSize, fileMetaData.FileSize)
-	defer wg.Done()
+	defer (*wg).Done()
 	// 写入 FileFragment 结构体信息
 	fileFragment := models.FileFragment{
 		MD5:     fileMetaData.MD5,
