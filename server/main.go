@@ -198,6 +198,35 @@ func ReceiveFile(conn net.Conn) {
 }
 
 func mergeFile(dirName, outputFilename string) {
-	// todo
-	panic("implement me")
+	// 获取dirName下的所有文件
+	dir, err := os.ReadDir(filepath.Join(outputDir, dirName))
+	if err != nil {
+		log.Fatalln("Error reading directory:", err)
+		return
+	}
+	files := make([]string, len(dir))
+	for i, entry := range dir {
+		files[i] = entry.Name()
+	}
+	outputFileName := filepath.Join(outputDir, dirName, outputFilename)
+	outputFile, err := os.Create(outputFileName)
+	if err != nil {
+		log.Fatalln("Error creating output file:", err)
+		return
+	}
+	defer outputFile.Close()
+	for _, fileName := range files {
+		log.Println("Merging file:", fileName)
+		file, err := os.Open(filepath.Join(outputDir, dirName, fileName))
+		if err != nil {
+			log.Fatalln("Error opening file:", err)
+			return
+		}
+		defer file.Close()
+		if _, err := io.Copy(outputFile, file); err != nil {
+			log.Fatalln("Error copying file:", err)
+			return
+		}
+	}
+	log.Println("File merged:", outputFileName)
 }
