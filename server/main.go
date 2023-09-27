@@ -190,8 +190,16 @@ func ReceiveFile(conn net.Conn) {
 	redisClient.SRem(context.Background(), "FileTransferInfo:"+fileFragment.MD5, fileFragment.Current)
 	// 判断是否已经接收完毕
 	if redisClient.SCard(context.Background(), "FileTransferInfo:"+fileFragment.MD5).Val() == 0 {
-		// 已经接收完毕，删除FileTransferInfo
-		redisClient.Del(context.Background(), "FileTransferInfo:"+fileFragment.MD5)
+		// redis互斥锁，-1表示文件传输完成
+		nx := redisClient.SetNX(context.Background(), "FileTransferInfo:"+fileFragment.MD5, -1, time.Hour*24)
+		// 如果上锁失败
+		if nx.Val() == false {
+			return
+		}
+
+		log.Println("File transfer completed:", fileFragment.MD5)
+		// 删除FileMetaData
+		redisClient.Del(context.Background(), "FileMetaData:"+fileFragment.MD5)
 		// 将文件合并
 		mergeFile(fileFragment.MD5, metaData.Name)
 	}
