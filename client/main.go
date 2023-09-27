@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/motongxue/concurrentChunkTransfer/models"
 	"github.com/motongxue/concurrentChunkTransfer/utils"
+	"github.com/spf13/viper"
 	"io"
 	"log"
 	"net"
@@ -16,13 +17,34 @@ import (
 )
 
 var (
-	// todo 变量抽取到配置文件中
-	fileName   = "test_in\\Go工程师面试真题.pdf"
-	url        = "http://localhost:8080/getFileTransferInfo"
-	tcpAddress = "localhost:8081"
-	ChunkSize  = 1 << 20 // 1MB
-	bufferSize = 1 << 10 // 每次发送 1KB 数据
+	fileName   string
+	httpUrl    string
+	tcpAddress string
+	chunkSize  int // 1MB
+	bufferSize int // 每次发送 1KB 数据
 )
+
+func init() {
+
+	config := viper.New()
+	config.AddConfigPath("./conf/")
+	config.SetConfigName("application")
+	config.SetConfigType("yaml")
+	if err := config.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			log.Fatalln("找不到配置文件..")
+		} else {
+			log.Fatalln("配置文件出错..")
+		}
+	}
+
+	fileName = config.GetString("client.fileName")
+	httpUrl = config.GetString("client.httpUrl")
+	tcpAddress = config.GetString("client.tcpAddress")
+	chunkSize, _ = utils.GetConfInt(config, "client.chunkSize")
+	bufferSize, _ = utils.GetConfInt(config, "client.bufferSize")
+	fmt.Printf("fileName:%s\t, httpUrl:%s\t, tcpAddress:%s\t, chunkSize:%d\t, bufferSize:%d\t\n", fileName, httpUrl, tcpAddress, chunkSize, bufferSize)
+}
 
 func main() {
 	file, err := os.Open(fileName)
@@ -50,22 +72,23 @@ func main() {
 	for _, idx := range info.Unreceived {
 		if idx == -1 {
 			// 已经接收完毕
-			continue
+			break
 		}
-		conn, err := net.Dial("tcp", tcpAddress)
-		if err != nil {
-			fmt.Println("Error connecting to server:", err)
-			return
-		}
-		defer conn.Close()
 		wg.Add(1)
-		go sendSliceFile(idx, fileMetaData, &wg, &conn)
+		go sendSliceFile(idx, fileMetaData, &wg)
 	}
 	wg.Wait()
 	log.Println("File sent successfully")
 }
 
-func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg *sync.WaitGroup, conn *net.Conn) {
+// sendSliceFile 发送文件分片
+func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg *sync.WaitGroup) {
+	conn, err := net.Dial("tcp", tcpAddress)
+	if err != nil {
+		fmt.Println("Error connecting to server:", err)
+		return
+	}
+	defer conn.Close()
 	startOffset := int64(idx) * fileMetaData.ChunkSize
 	endOffset := min(startOffset+fileMetaData.ChunkSize, fileMetaData.FileSize)
 	defer (*wg).Done()
@@ -74,7 +97,7 @@ func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg *sync.WaitGroup
 		MD5:     fileMetaData.MD5,
 		Current: idx,
 	}
-	encoder := json.NewEncoder(*conn)
+	encoder := json.NewEncoder(conn)
 	if err := encoder.Encode(fileFragment); err != nil {
 		log.Println("Error encoding FileFragment:", err)
 		return
@@ -107,7 +130,7 @@ func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg *sync.WaitGroup
 			return
 		}
 
-		_, err = (*conn).Write(buffer[:n])
+		_, err = conn.Write(buffer[:n])
 		if err != nil {
 			log.Println("Error sending file fileMetaData:", err)
 			return
@@ -119,6 +142,7 @@ func sendSliceFile(idx int, fileMetaData models.FileMetaData, wg *sync.WaitGroup
 	fmt.Printf("File sent successfully: start: %d, end: %d, len: %d == %d\n", startOffset, endOffset, endOffset-startOffset, totalBytesSent)
 }
 
+// getFileTransferInfo 获取文件分片信息
 func getFileTransferInfo(fileMetaData models.FileMetaData) (models.FileTransferInfo, error) {
 	// 发送http请求，获取文件分片信息
 	jsonData, err := json.Marshal(fileMetaData)
@@ -127,7 +151,7 @@ func getFileTransferInfo(fileMetaData models.FileMetaData) (models.FileTransferI
 		return models.FileTransferInfo{}, err
 	}
 
-	request, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	request, err := http.NewRequest("POST", httpUrl, bytes.NewBuffer(jsonData))
 	if err != nil {
 		log.Fatalln("Error creating HTTP request:", err)
 		return models.FileTransferInfo{}, err
@@ -153,6 +177,7 @@ func getFileTransferInfo(fileMetaData models.FileMetaData) (models.FileTransferI
 	return info, nil
 }
 
+// calFileMetaData 计算文件的MD5值、文件名、文件大小、分片大小、分片数量
 func calFileMetaData(file *os.File) (models.FileMetaData, error) {
 	stat, _ := file.Stat()
 	size := stat.Size()
@@ -166,7 +191,7 @@ func calFileMetaData(file *os.File) (models.FileMetaData, error) {
 		MD5:       md5Str,
 		Name:      filepath.Base(file.Name()),
 		FileSize:  size,
-		ChunkSize: int64(ChunkSize), // 1MB
+		ChunkSize: int64(chunkSize), // 1MB
 	}
 	t := fileMetaData.FileSize / fileMetaData.ChunkSize
 	if fileMetaData.FileSize%fileMetaData.ChunkSize != 0 {

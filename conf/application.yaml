@@ -1,0 +1,14 @@
+client:
+  fileName: "test_in\\Go工程师面试真题.pdf"
+  httpUrl: "http://localhost:8080/getFileTransferInfo"
+  tcpAddress: "localhost:8081"
+  ChunkSize: "1 << 20" # 1MB
+  bufferSize: "1 << 10" # buffer大小，每次发送 1KB 数据
+
+server:
+  outputDir: "test_out"
+  redisAddr: "172.22.121.54:20001"
+  redisPassword: "3739e394237c4e14a4b3b6bf64524680"
+  redisDB: 6
+  httpPort: "8080"
+  tcpPort: "8081"

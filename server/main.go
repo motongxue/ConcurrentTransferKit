@@ -8,6 +8,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/motongxue/concurrentChunkTransfer/models"
 	"github.com/motongxue/concurrentChunkTransfer/utils"
+	"github.com/spf13/viper"
 	"log"
 	"net"
 	"os"
@@ -17,23 +18,42 @@ import (
 )
 
 var (
-	// todo 变量抽取到配置文件中
 	redisClient   *redis.Client
-	outputDir     = "test_out"
-	redisAddr     = "172.22.121.54:20001"
-	redisPassword = "3739e394237c4e14a4b3b6bf64524680"
-	httpPort      = "8080"
-	tcpPort       = "8081"
+	outputDir     string
+	redisAddr     string
+	redisPassword string
+	redisDB       int
+	httpPort      string
+	tcpPort       string
 )
 
 func init() {
-	//初始化Redis
+	// 读取配置文件
+	config := viper.New()
+	config.AddConfigPath("./conf/")
+	config.SetConfigName("application")
+	config.SetConfigType("yaml")
+	if err := config.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
+			fmt.Println("找不到配置文件..")
+		} else {
+			fmt.Println("配置文件出错..")
+		}
+	}
+	outputDir = config.GetString("server.outputDir")
+	redisAddr = config.GetString("server.redisAddr")
+	redisPassword = config.GetString("server.redisPassword")
+	redisDB = config.GetInt("server.redisDB")
+	httpPort = config.GetString("server.httpPort")
+	tcpPort = config.GetString("server.tcpPort")
+	fmt.Printf("outputDir:%s\t, redisAddr:%s\t, redisPassword:%s\t, redisDB:%d\t, httpPort:%s\t, tcpPort:%s\t\n", outputDir, redisAddr, redisPassword, redisDB, httpPort, tcpPort)
+
 	// 创建一个Redis客户端连接
 	ctx := context.Background()
 	redisClient = redis.NewClient(&redis.Options{
 		Addr:     redisAddr,     // Redis服务器地址和端口
 		Password: redisPassword, // Redis服务器密码
-		DB:       6,             // 默认使用的数据库
+		DB:       redisDB,       // 默认使用的数据库
 	})
 
 	// 使用Ping检查是否成功连接到Redis
@@ -43,6 +63,7 @@ func init() {
 		return
 	}
 	fmt.Println("Connected to Redis:", pong)
+
 }
 
 func main() {

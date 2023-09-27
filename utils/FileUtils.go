@@ -82,6 +82,7 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 	}
 }
 
+// mergeFile 合并文件
 func mergeFile(outputDir, dirName, outputFilename string) {
 	// 获取dirName下的所有文件
 	dir, err := os.ReadDir(filepath.Join(outputDir, dirName))
