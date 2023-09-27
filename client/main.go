@@ -84,6 +84,10 @@ func main() {
 	info = responseData.Data
 	var wg sync.WaitGroup
 	for _, idx := range info.Unreceived {
+		if idx == -1 {
+			// 已经接收完毕
+			continue
+		}
 		conn, err := net.Dial("tcp", tcpAddress)
 		if err != nil {
 			fmt.Println("Error connecting to server:", err)
