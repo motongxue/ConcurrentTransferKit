@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 	"github.com/motongxue/concurrentChunkTransfer/models"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -139,6 +140,64 @@ func getFileTransferInfo(ctx *gin.Context) {
 
 // ReceiveFile 接收文件
 func ReceiveFile(conn net.Conn) {
-	// panic 方法未实现
+	defer conn.Close()
+
+	// 读取 FileFragment 结构体信息
+	var fileFragment models.FileFragment
+	decoder := json.NewDecoder(conn)
+	if err := decoder.Decode(&fileFragment); err != nil {
+		log.Fatalln(err)
+	}
+
+	log.Printf("Received FileFragment: %+v\n", fileFragment)
+	outputFile, err := os.Create(filepath.Join(outputDir, fileFragment.MD5, strconv.Itoa(fileFragment.Current)))
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer outputFile.Close()
+
+	// 使用缓冲区逐块接收并写入文件
+	bufferSize := 1024 // 每次接收 1KB 数据
+	buffer := make([]byte, bufferSize)
+	totalReceived := int64(0)
+	// 从Redis中获取FileMetaData
+	fileMetaData := redisClient.Get(context.Background(), "FileMetaData:"+fileFragment.MD5)
+	if fileMetaData.Err() != nil {
+		log.Fatalln("Failed to get file metadata:", err)
+		return
+	}
+	var metaData models.FileMetaData
+	err = json.Unmarshal([]byte(fileMetaData.Val()), &metaData)
+	if err != nil {
+		log.Fatalln("Failed to unmarshal file metadata:", err)
+		return
+	}
+	for totalReceived < metaData.ChunkSize {
+		n, err := conn.Read(buffer)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			log.Fatalln("Error receiving file data:", err)
+		}
+		if _, err := outputFile.Write(buffer[:n]); err != nil {
+			log.Fatalln("Error writing to file:", err)
+			return
+		}
+		totalReceived += int64(n)
+	}
+	// 加锁，从Redis中删除该分片
+	redisClient.SRem(context.Background(), "FileTransferInfo:"+fileFragment.MD5, fileFragment.Current)
+	// 判断是否已经接收完毕
+	if redisClient.SCard(context.Background(), "FileTransferInfo:"+fileFragment.MD5).Val() == 0 {
+		// 已经接收完毕，删除FileTransferInfo
+		redisClient.Del(context.Background(), "FileTransferInfo:"+fileFragment.MD5)
+		// 将文件合并
+		mergeFile(fileFragment.MD5, metaData.Name)
+	}
+}
+
+func mergeFile(dirName, outputFilename string) {
+	// todo
 	panic("implement me")
 }
