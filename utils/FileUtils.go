@@ -26,6 +26,7 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 	}
 
 	log.Printf("Received FileFragment: %+v\n", fileFragment)
+
 	outputFile, err := os.Create(filepath.Join(outputDir, fileFragment.MD5, strconv.Itoa(fileFragment.Current)))
 	if err != nil {
 		log.Fatalln(err)
@@ -37,7 +38,7 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 	buffer := make([]byte, bufferSize)
 	totalReceived := int64(0)
 	// 从Redis中获取FileMetaData
-	fileMetaData := redisClient.Get(context.Background(), "FileMetaData:"+fileFragment.MD5)
+	fileMetaData := redisClient.Get(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5)
 	if fileMetaData.Err() != nil {
 		log.Fatalln("Failed to get file metadata:", err)
 		return
@@ -64,11 +65,12 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 	}
 	// todo redis key统一管理
 	// 加锁，从Redis中删除该分片
-	redisClient.SRem(context.Background(), "FileTransferInfo:"+fileFragment.MD5, fileFragment.Current)
+	redisClient.SRem(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5, fileFragment.Current)
 	// 判断是否已经接收完毕
-	if redisClient.SCard(context.Background(), "FileTransferInfo:"+fileFragment.MD5).Val() == 0 {
+	if redisClient.SCard(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5).Val() == 0 {
 		// redis互斥锁，-1表示文件传输完成
-		nx := redisClient.SetNX(context.Background(), "FileTransferInfo:"+fileFragment.MD5, -1, time.Hour*24)
+		// TODO 需要改为对set的互斥锁
+		nx := redisClient.SetNX(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5, -1, time.Hour*24)
 		// 如果上锁失败
 		if nx.Val() == false {
 			return
@@ -76,8 +78,9 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 
 		log.Println("File transfer completed:", fileFragment.MD5)
 		// 删除FileMetaData
-		redisClient.Del(context.Background(), "FileMetaData:"+fileFragment.MD5)
+		redisClient.Del(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5)
 		// 将文件合并
+		// todo 合并过程中，服务器宕机，则需要重新合并
 		mergeFile(outputDir, fileFragment.MD5, metaData.Name)
 	}
 }
