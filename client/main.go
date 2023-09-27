@@ -17,7 +17,7 @@ import (
 
 var (
 	// todo 变量抽取到配置文件中
-	fileName   = "D:\\my_data\\my_code\\go_code\\ConcurrentTransferKit\\test_in\\Go工程师面试真题.pdf"
+	fileName   = "test_in\\Go工程师面试真题.pdf"
 	url        = "http://localhost:8080/getFileTransferInfo"
 	tcpAddress = "localhost:8081"
 	ChunkSize  = 1 << 20 // 1MB

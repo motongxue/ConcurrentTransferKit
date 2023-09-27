@@ -18,8 +18,6 @@ import (
 
 var (
 	// todo 变量抽取到配置文件中
-	// TODO 状态码统一管理
-	// TODO redis的key、value统一管理
 	redisClient   *redis.Client
 	outputDir     = "test_out"
 	redisAddr     = "172.22.121.54:20001"
@@ -77,7 +75,7 @@ func getFileTransferInfo(ctx *gin.Context) {
 		})
 		return
 	}
-	log.Println("FileMetaData:", metaData)
+	log.Println(utils.FILE_MATEDATA_KEY, metaData)
 	// 将metaData写入redis
 	jsonMetaData, err := json.Marshal(metaData)
 	if err != nil {
@@ -88,14 +86,14 @@ func getFileTransferInfo(ctx *gin.Context) {
 		return
 	}
 	// 将FileMetaData写入redis
-	redisClient.SetEX(context.Background(), "FileMetaData:"+metaData.MD5, jsonMetaData, time.Hour)
+	redisClient.SetEX(context.Background(), utils.FILE_MATEDATA_KEY+metaData.MD5, jsonMetaData, time.Hour)
 
 	md5 := metaData.MD5
 	info := models.FileTransferInfo{
 		MD5: md5,
 	}
 	// 从Redis中判断该dirName是否存在FileTransferInfo
-	if redisClient.Exists(context.Background(), "FileTransferInfo:"+md5).Val() == 0 {
+	if redisClient.Exists(context.Background(), utils.FILE_TRANSFER_INFO_KEY+md5).Val() == 0 {
 		// 不存在，创建
 		info.MD5 = metaData.MD5
 		info.Unreceived = make([]int, metaData.ChunkNum)
@@ -110,7 +108,7 @@ func getFileTransferInfo(ctx *gin.Context) {
 		// 以MD5为key的set
 		for _, num := range info.Unreceived {
 			// FileTransferInfo
-			_, err := redisClient.SAdd(context.Background(), "FileTransferInfo:"+md5, num).Result()
+			_, err := redisClient.SAdd(context.Background(), utils.FILE_TRANSFER_INFO_KEY+md5, num).Result()
 			if err != nil {
 				log.Fatalln("Failed to add members to set:", err)
 				return
@@ -118,7 +116,7 @@ func getFileTransferInfo(ctx *gin.Context) {
 		}
 	} else {
 		// FileTransferInfo存在，从Redis中获取
-		result, err := redisClient.MGet(context.Background(), "FileTransferInfo:"+md5).Result()
+		result, err := redisClient.MGet(context.Background(), utils.FILE_TRANSFER_INFO_KEY+md5).Result()
 		// 将result转换为info
 		for _, v := range result {
 			fmt.Println(v)
