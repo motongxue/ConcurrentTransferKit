@@ -70,10 +70,6 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	for _, idx := range info.Unreceived {
-		if idx == -1 {
-			// 已经接收完毕
-			break
-		}
 		wg.Add(1)
 		go sendSliceFile(idx, fileMetaData, &wg)
 	}

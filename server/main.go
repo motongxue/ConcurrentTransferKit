@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"time"
 )
 
 var (
@@ -106,8 +105,47 @@ func getFileTransferInfo(ctx *gin.Context) {
 		})
 		return
 	}
+
 	// 将FileMetaData写入redis
-	redisClient.SetEX(context.Background(), utils.FILE_MATEDATA_KEY+metaData.MD5, jsonMetaData, time.Hour)
+	// 如果utils.FILE_MATEDATA_KEY+metaData.MD5不存在，则设置
+	if redisClient.Exists(context.Background(), utils.FILE_MATEDATA_KEY+metaData.MD5).Val() == 0 {
+		// 设置过期时间
+		redisClient.Set(context.Background(), utils.FILE_MATEDATA_KEY+metaData.MD5, jsonMetaData, redis.KeepTTL)
+	} else {
+		// 如果存在，则查看是否完成
+		// 从Redis中获取FileMetaData
+		fileMetaData := redisClient.Get(context.Background(), utils.FILE_MATEDATA_KEY+metaData.MD5)
+		if fileMetaData.Err() != nil {
+			log.Fatalln("Failed to get file metadata:", err)
+			return
+		}
+		var metaData models.FileMetaData
+		err = json.Unmarshal([]byte(fileMetaData.Val()), &metaData)
+		if err != nil {
+			log.Fatalln("Failed to unmarshal file metadata:", err)
+			return
+		}
+		if metaData.IsCompleted {
+			ctx.JSON(200, gin.H{
+				"code": 0,
+				"msg":  "文件传输成功",
+				"data": models.FileTransferInfo{
+					MD5: metaData.MD5,
+				},
+			})
+			return
+		} else if metaData.IsTransmitted {
+			ctx.JSON(200, gin.H{
+				"code": 0,
+				"msg":  "文件分片接收成功，等待文件合并",
+				"data": models.FileTransferInfo{
+					MD5: metaData.MD5,
+				},
+			})
+			utils.MergeFile(redisClient, outputDir, metaData.MD5, metaData.Name)
+			return
+		}
+	}
 
 	md5 := metaData.MD5
 	info := models.FileTransferInfo{
@@ -137,11 +175,11 @@ func getFileTransferInfo(ctx *gin.Context) {
 		}
 	} else {
 		// FileTransferInfo存在，从Redis中获取
-		result, err := redisClient.MGet(context.Background(), utils.FILE_TRANSFER_INFO_KEY+md5).Result()
+		result, err := redisClient.SMembers(context.Background(), utils.FILE_TRANSFER_INFO_KEY+md5).Result()
 		// 将result转换为info
 		for _, v := range result {
 			fmt.Println(v)
-			val, _ := strconv.Atoi(v.(string))
+			val, _ := strconv.Atoi(v)
 			info.Unreceived = append(info.Unreceived, val)
 		}
 		if err != nil {

@@ -63,40 +63,53 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 		}
 		totalReceived += int64(n)
 	}
-	// todo redis key统一管理
 	// 加锁，从Redis中删除该分片
 	redisClient.SRem(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5, fileFragment.Current)
 	// 判断是否已经接收完毕
 	if redisClient.SCard(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5).Val() == 0 {
 		// redis互斥锁，-1表示文件传输完成
-		// TODO 需要改为对set的互斥锁
-		nx := redisClient.SetNX(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5, -1, time.Hour*24)
+		nx := redisClient.SetNX(context.Background(), FILE_TRANSFER_LOCK_KEY+fileFragment.MD5, -1, time.Hour*24)
 		// 如果上锁失败
 		if nx.Val() == false {
 			return
 		}
+		// 设置isTransmitted为true
+		metaData.IsTransmitted = true
+		jsonMetaData, err := json.Marshal(metaData)
+		if err != nil {
+			log.Fatalln("Failed to marshal file metadata:", err)
+			return
+		}
+		// 将FileMetaData写入redis
+		redisClient.Set(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5, jsonMetaData, redis.KeepTTL)
 
 		log.Println("File transfer completed:", fileFragment.MD5)
 		// 删除FileMetaData
-		redisClient.Del(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5)
+		//redisClient.Del(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5)
 		// 将文件合并
-		// todo 合并过程中，服务器宕机，则需要重新合并
-		mergeFile(outputDir, fileFragment.MD5, metaData.Name)
+		MergeFile(redisClient, outputDir, fileFragment.MD5, metaData.Name)
+		// 删除redis互斥锁
+		redisClient.Del(context.Background(), FILE_TRANSFER_LOCK_KEY+fileFragment.MD5)
 	}
 }
 
-// mergeFile 合并文件
-func mergeFile(outputDir, dirName, outputFilename string) {
+// MergeFile 合并文件
+func MergeFile(redisClient *redis.Client, outputDir, dirName, outputFilename string) {
 	// 获取dirName下的所有文件
 	dir, err := os.ReadDir(filepath.Join(outputDir, dirName))
 	if err != nil {
 		log.Fatalln("Error reading directory:", err)
 		return
 	}
-	files := make([]string, len(dir))
-	for i, entry := range dir {
-		files[i] = entry.Name()
+	files := make([]string, 0, len(dir))
+	for _, entry := range dir {
+		if entry.Name() == outputFilename {
+			continue
+		}
+		files = append(files, entry.Name())
 	}
+	log.Println("file length:", len(files))
+	log.Println("files:", files)
 	outputFileName := filepath.Join(outputDir, dirName, outputFilename)
 	outputFile, err := os.Create(outputFileName)
 	if err != nil {
@@ -117,5 +130,27 @@ func mergeFile(outputDir, dirName, outputFilename string) {
 			return
 		}
 	}
+	// 在redis中更新FileMetaData
+	// 从Redis中获取FileMetaData
+	fileMetaData := redisClient.Get(context.Background(), FILE_MATEDATA_KEY+dirName)
+	if fileMetaData.Err() != nil {
+		log.Fatalln("Failed to get file metadata:", err)
+		return
+	}
+	var metaData models.FileMetaData
+	err = json.Unmarshal([]byte(fileMetaData.Val()), &metaData)
+	if err != nil {
+		log.Fatalln("Failed to unmarshal file metadata:", err)
+		return
+	}
+	metaData.IsCompleted = true
+	jsonMetaData, err := json.Marshal(metaData)
+	if err != nil {
+		log.Fatalln("Failed to marshal file metadata:", err)
+		return
+	}
+	// 将FileMetaData写入redis
+	redisClient.Set(context.Background(), FILE_MATEDATA_KEY+dirName, jsonMetaData, redis.KeepTTL)
+
 	log.Println("File merged:", outputFileName)
 }
