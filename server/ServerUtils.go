@@ -1,10 +1,11 @@
-package utils
+package main
 
 import (
 	"context"
 	"encoding/json"
 	"github.com/go-redis/redis/v8"
 	"github.com/motongxue/concurrentChunkTransfer/models"
+	"github.com/motongxue/concurrentChunkTransfer/utils"
 	"io"
 	"log"
 	"net"
@@ -38,7 +39,7 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 	buffer := make([]byte, bufferSize)
 	totalReceived := int64(0)
 	// 从Redis中获取FileMetaData
-	fileMetaData := redisClient.Get(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5)
+	fileMetaData := redisClient.Get(context.Background(), utils.FILE_MATEDATA_KEY+fileFragment.MD5)
 	if fileMetaData.Err() != nil {
 		log.Fatalln("Failed to get file metadata:", err)
 		return
@@ -64,11 +65,11 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 		totalReceived += int64(n)
 	}
 	// 加锁，从Redis中删除该分片
-	redisClient.SRem(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5, fileFragment.Current)
+	redisClient.SRem(context.Background(), utils.FILE_TRANSFER_INFO_KEY+fileFragment.MD5, fileFragment.Current)
 	// 判断是否已经接收完毕
-	if redisClient.SCard(context.Background(), FILE_TRANSFER_INFO_KEY+fileFragment.MD5).Val() == 0 {
+	if redisClient.SCard(context.Background(), utils.FILE_TRANSFER_INFO_KEY+fileFragment.MD5).Val() == 0 {
 		// redis互斥锁，-1表示文件传输完成
-		nx := redisClient.SetNX(context.Background(), FILE_TRANSFER_LOCK_KEY+fileFragment.MD5, -1, time.Hour*24)
+		nx := redisClient.SetNX(context.Background(), utils.FILE_TRANSFER_LOCK_KEY+fileFragment.MD5, -1, time.Hour*24)
 		// 如果上锁失败
 		if nx.Val() == false {
 			return
@@ -81,7 +82,7 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 			return
 		}
 		// 将FileMetaData写入redis
-		redisClient.Set(context.Background(), FILE_MATEDATA_KEY+fileFragment.MD5, jsonMetaData, redis.KeepTTL)
+		redisClient.Set(context.Background(), utils.FILE_MATEDATA_KEY+fileFragment.MD5, jsonMetaData, redis.KeepTTL)
 
 		log.Println("File transfer completed:", fileFragment.MD5)
 		// 删除FileMetaData
@@ -89,7 +90,7 @@ func ReceiveFile(redisClient *redis.Client, outputDir string, conn *net.Conn) {
 		// 将文件合并
 		MergeFile(redisClient, outputDir, fileFragment.MD5, metaData.Name)
 		// 删除redis互斥锁
-		redisClient.Del(context.Background(), FILE_TRANSFER_LOCK_KEY+fileFragment.MD5)
+		redisClient.Del(context.Background(), utils.FILE_TRANSFER_LOCK_KEY+fileFragment.MD5)
 	}
 }
 
@@ -132,7 +133,7 @@ func MergeFile(redisClient *redis.Client, outputDir, dirName, outputFilename str
 	}
 	// 在redis中更新FileMetaData
 	// 从Redis中获取FileMetaData
-	fileMetaData := redisClient.Get(context.Background(), FILE_MATEDATA_KEY+dirName)
+	fileMetaData := redisClient.Get(context.Background(), utils.FILE_MATEDATA_KEY+dirName)
 	if fileMetaData.Err() != nil {
 		log.Fatalln("Failed to get file metadata:", err)
 		return
@@ -150,7 +151,7 @@ func MergeFile(redisClient *redis.Client, outputDir, dirName, outputFilename str
 		return
 	}
 	// 将FileMetaData写入redis
-	redisClient.Set(context.Background(), FILE_MATEDATA_KEY+dirName, jsonMetaData, redis.KeepTTL)
+	redisClient.Set(context.Background(), utils.FILE_MATEDATA_KEY+dirName, jsonMetaData, redis.KeepTTL)
 
 	log.Println("File merged:", outputFileName)
 }

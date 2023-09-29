@@ -81,7 +81,7 @@ func main() {
 		if err != nil {
 			log.Fatalln(err)
 		}
-		go utils.ReceiveFile(redisClient, outputDir, &conn)
+		go ReceiveFile(redisClient, outputDir, &conn)
 	}
 }
 
@@ -142,7 +142,7 @@ func getFileTransferInfo(ctx *gin.Context) {
 					MD5: metaData.MD5,
 				},
 			})
-			utils.MergeFile(redisClient, outputDir, metaData.MD5, metaData.Name)
+			MergeFile(redisClient, outputDir, metaData.MD5, metaData.Name)
 			return
 		}
 	}
